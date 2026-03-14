@@ -60,41 +60,62 @@
 
 
 
-
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from datetime import timedelta
 import traceback
-from fastapi import HTTPException
+
+from app.database.connection import get_db
+from app.core.security import verify_password, create_access_token
+from app.config.settings import settings
+from app.schemas.user import Token
+from app.api.clients import get_user_by_email # Asegúrate que esta ruta de import sea correcta en tu proyecto
+
+router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/login", response_model=Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    print(f"DEBUG: Iniciando login para {form_data.username}")
     try:
+        # 1. Buscar usuario
         user = get_user_by_email(db, email=form_data.username)
         if not user:
-            raise HTTPException(status_code=401, detail="Usuario no encontrado")
+            print("DEBUG: Usuario no encontrado")
+            raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
         
-        # Punto crítico 1: Bcrypt
+        # 2. Verificar Password
         try:
             is_valid = verify_password(form_data.password, user.password_hash)
+            print(f"DEBUG: Resultado validacion password: {is_valid}")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Fallo en Bcrypt: {str(e)}")
+            print(f"DEBUG: Error en verify_password: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error en validación de hash: {str(e)}")
 
         if not is_valid:
-            raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+            raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
 
-        # Punto crítico 2: Generación de Token
+        # 3. Generar Token
         try:
             access_token_expires = timedelta(minutes=int(settings.JWT_EXPIRE))
             access_token = create_access_token(
-                data={"email": user.email, "role": user.role}, 
+                data={"sub": user.email, "role": user.role}, 
                 expires_delta=access_token_expires
             )
+            print("DEBUG: Token generado con éxito")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Fallo en JWT (Secret/Expire): {str(e)}")
+            print(f"DEBUG: Error en create_access_token: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error al generar token (Variable JWT_SECRET?): {str(e)}")
 
         return {"access_token": access_token, "token_type": "bearer"}
 
     except HTTPException as he:
         raise he
     except Exception as e:
-        # Esto nos devolverá la traza completa en Swagger
-        error_detalle = traceback.format_exc()
-        raise HTTPException(status_code=500, detail=f"Error inesperado: {str(e)} | Trace: {error_detalle}")
+        trace = traceback.format_exc()
+        print(f"DEBUG: Error critico: {trace}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)} | Trace: {trace}")
+
+@router.get("/me")
+def read_users_me():
+    return {"status": "ok"}
