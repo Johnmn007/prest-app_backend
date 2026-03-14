@@ -9,3 +9,5 @@ python-jose[cryptography]
 passlib[bcrypt]
 bcrypt
 redis
+email-validator
+psycopg2-binary
