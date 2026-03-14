@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 sqlalchemy
-psycopg2
+psycopg2-binary
 pydantic
 pydantic-settings
 alembic
@@ -10,4 +10,3 @@ passlib[bcrypt]
 bcrypt
 redis
 email-validator
-psycopg2-binary
