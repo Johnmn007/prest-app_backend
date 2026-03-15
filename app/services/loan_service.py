@@ -1,3 +1,4 @@
+import logging
 from sqlalchemy.orm import Session
 from app.models.loan import Loan, Installment
 from app.models.client import Client
@@ -5,42 +6,34 @@ from app.schemas.loan_schema import LoanCreate
 from datetime import timedelta, date
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 def generate_installments(db: Session, loan_id: int, num_installments: int, daily_payment_cents: int, start_date: date):
     """
-    Genera el cronograma de pagos. 
-    Usa ISO isocalendar para detectar el domingo (Día 7) de forma infalible.
+    Genera el cronograma de pagos saltando domingos.
+    Usa ISO isocalendar: día 7 = domingo.
     """
     installments_to_add = []
-    # Aseguramos que trabajamos con el objeto fecha puro
     current_date = start_date
     count = 0
-    
-    print(f"--- Iniciando generación de {num_installments} cuotas ---")
-    
+
+    logger.info(f"Generating {num_installments} installments for loan {loan_id}")
+
     while count < num_installments:
         current_date += timedelta(days=1)
-        
-        # isocalendar() devuelve (año, semana, día_semana)
-        # El día_semana ISO es: 1=Lunes ... 6=Sábado, 7=Domingo
-        # ESTO ES INFALIBLE: No depende del idioma ni de la zona horaria
-        if current_date.isocalendar()[2] == 7:
-            print(f"Saltando Domingo detectado: {current_date}")
+        if current_date.isocalendar()[2] == 7:  # Domingo
             continue
-            
         count += 1
-        installment = Installment(
+        installments_to_add.append(Installment(
             loan_id=loan_id,
             installment_number=count,
             due_date=current_date,
             amount=daily_payment_cents / 100,
             paid_amount=0.0,
-            status="PENDING"
-        )
-        installments_to_add.append(installment)
-        
+            status="PENDING",
+        ))
+
     db.add_all(installments_to_add)
-    
-    # Actualizamos la fecha de fin real
     db.query(Loan).filter(Loan.id == loan_id).update({"end_date": current_date})
     db.commit()
 

@@ -1,47 +1,37 @@
 import bcrypt
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import jwt
+from jose import jwt, JWTError
 from app.config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
-        # Forzamos a bytes para evitar errores de codificación
         return bcrypt.checkpw(
-            plain_password.encode('utf-8'), 
-            hashed_password.encode('utf-8')
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8")
         )
-    except Exception:
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
         return False
 
 def get_password_hash(password: str) -> str:
-    pwd_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(pwd_bytes, salt)
-    return hashed.decode('utf-8')
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    
-    # Aseguramos que expire sea un entero
-    try:
-        expire_minutes = int(settings.JWT_EXPIRE)
-    except:
-        expire_minutes = 10080 # 1 semana por defecto
-
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=expire_minutes)
-    
-    to_encode.update({"exp": expire})
-    
-    # Aseguramos que JWT_SECRET sea string y no esté vacío
-    secret_key = str(settings.JWT_SECRET)
-    
-    # El error suele estar aquí si la librería jose no recibe los tipos exactos
-    encoded_jwt = jwt.encode(to_encode, secret_key, algorithm="HS256")
-    return str(encoded_jwt)
+    expire_minutes = int(settings.JWT_EXPIRE)
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=expire_minutes))
+    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc)})
+    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(str(token), str(settings.JWT_SECRET), algorithms=["HS256"])
+    return jwt.decode(
+        token,
+        settings.JWT_SECRET,
+        algorithms=[settings.JWT_ALGORITHM]
+    )
